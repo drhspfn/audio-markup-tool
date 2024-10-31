@@ -63,15 +63,21 @@ function App() {
 	};
 
 	const handleFolderSelect = (event) => {
-		const files = Array.from(event.target.files);
-
+		const files = Array.from(event.target.files)
+			.filter(file => {
+				return file.type.startsWith('audio/') || 
+					   /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name);
+			});
+		
+		console.log('audio files: ', files);
+	
 		const newTracks = {};
 		const markupTracks = {};
 		files.forEach(file => {
 			newTracks[file.name] = file;
 			markupTracks[file.name] = [];
 		});
-
+	
 		setTracks(prevTracks => ({ ...prevTracks, ...newTracks }));
 		setMarkupTracks(prevTracks => ({ ...prevTracks, ...markupTracks }));
 	};
