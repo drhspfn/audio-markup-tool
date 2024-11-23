@@ -31,15 +31,6 @@ function ExportModal({
                     }
                 ]
             }
-            // const sampleData = [
-            //     {
-            //         name: `${exportFilePath}/1.mp3`,
-            //         regions: [
-            //             [0, 30.1],
-            //             [45.4, 80]
-            //         ]
-            //     }
-            // ];
             setExportPreviewData(JSON.stringify(sampleData, null, 2));
         } else if (format === 'csv') {
             const csvContent = `path,start,end\n${exportFilePath}/1.mp3,21.5,84.3`;
