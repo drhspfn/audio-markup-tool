@@ -1,41 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
-import { Container, Row, Col, ListGroup, Dropdown, Button, Spinner, Table, InputGroup, Form } from 'react-bootstrap';
+import { Container, Row, Col, ListGroup, Button, Spinner, Table, InputGroup, Form } from 'react-bootstrap';
 import WaveSurfer from 'wavesurfer.js';
 import Regions from 'wavesurfer.js/dist/plugins/regions';
 import { FaTrash, FaRandom, FaPlay, FaPause, FaPlus, FaArrowUp, FaSearch } from 'react-icons/fa';
 import CustomModal from './Components/CustomModal'
-
-
-
-function getRandomBrightColor(op = 0.3) {
-	let r, g, b;
-
-	do {
-		r = Math.floor(Math.random() * 256);
-		g = Math.floor(Math.random() * 256);
-		b = Math.floor(Math.random() * 256);
-	} while (isDullColor(r, g, b)); // idk..
-
-	return `rgba(${r}, ${g}, ${b}, ${op})`;
-}
-
-function isDullColor(r, g, b) {
-	const brightness = Math.sqrt(
-		0.299 * (r * r) + 0.587 * (g * g) + 0.114 * (b * b)
-	);
-	return brightness < 127;
-}
-
+import ImportModal from './Components/ImportModal'
+import ExportModal from './Components/ExportModal'
+import { getRandomBrightColor, generateUUID } from './utils';
 
 
 function App() {
 	const [showExportModal, setShowExportModal] = useState(false);
-	const [exportFormat, setExportFormat] = useState('json');
-	const [exportPreviewData, setExportPreviewData] = useState('');
-	const [exportFilePath, setExportFilePath] = useState('');
-	const [exportOnlyLabeledTracks, setExportOnlyLabeledTracks] = useState(false);
-
+	const [showImportModal, setShowImportModal] = useState(false);
 	const [showHelpModal, setShowHelpModal] = useState(false);
+	const [inMainFrame, setInMainFrame] = useState(false);
 
 	const [markupTracks, setMarkupTracks] = useState({});
 	const [tracks, setTracks] = useState({});
@@ -65,22 +43,28 @@ function App() {
 	const handleFolderSelect = (event) => {
 		const files = Array.from(event.target.files)
 			.filter(file => {
-				return file.type.startsWith('audio/') || 
-					   /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name);
-			});
-		
-		console.log('audio files: ', files);
-	
+				return file.type.startsWith('audio/') ||
+					/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name);
+			})
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+
 		const newTracks = {};
 		const markupTracks = {};
 		files.forEach(file => {
 			newTracks[file.name] = file;
 			markupTracks[file.name] = [];
 		});
-	
+
 		setTracks(prevTracks => ({ ...prevTracks, ...newTracks }));
 		setMarkupTracks(prevTracks => ({ ...prevTracks, ...markupTracks }));
 	};
+
+	useEffect(() => {
+		if (tracks && Object.keys(tracks).length > 0) {
+			handleTrackSelect(Object.keys(tracks)[0])
+		}
+	}, [tracks]);
 
 	const goToNextTrack = () => {
 		if (currentTrackIndex !== null && currentTrackIndex < Object.keys(tracks).length - 1) {
@@ -98,6 +82,13 @@ function App() {
 
 	const handleTrackSelect = (filename) => {
 		const selectedFile = tracks[filename];
+
+		if (!selectedFile) {
+			console.error("Selected file not found in tracks:", filename);
+			console.error('Tracks: ', tracks)
+			return;
+		}
+
 		const url = URL.createObjectURL(selectedFile);
 		setCurrentTrack(filename);
 		const index = Object.keys(tracks).indexOf(filename);
@@ -123,19 +114,35 @@ function App() {
 			handleVolumeChange(0.1);
 		} else if (event.key === 'ArrowDown') {
 			event.preventDefault();
-			handleVolumeChange(-0.1); 
+			handleVolumeChange(-0.1);
 		} else if (event.ctrlKey && event.key === 's') {
 			event.preventDefault();
 			handleShowExportModal()
 		} else if (event.key === 'n') {
-			event.preventDefault();
-			addMarkupRegion(0, 5)
+			if (inMainFrame) {
+				event.preventDefault();
+				addMarkupRegion(0, 5)
+			}
+		} else if (event.key === 'i') {
+			if (inMainFrame) {
+				event.preventDefault();
+				handleShowImportModal();
+			}
+		} else if (event.key === 'e') {
+			if (inMainFrame) {
+				event.preventDefault();
+				handleShowExportModal();
+			}
 		} else if ((event.key === 'd' || event.key === 'Delete') && selectedRegionId) {
-			event.preventDefault();
-			removeRegion(selectedRegionId);
+			if (inMainFrame) {
+				event.preventDefault();
+				removeRegion(selectedRegionId);
+			}
 		} else if (event.key === 'Space' || event.key === " ") {
-			event.preventDefault();
-			handlePlayPauseToggle()
+			if (inMainFrame) {
+				event.preventDefault();
+				handlePlayPauseToggle()
+			}
 		}
 	};
 
@@ -146,7 +153,6 @@ function App() {
 			waveColor: 'violet',
 			progressColor: 'purple',
 			height: 128,
-			// interact: false,
 			responsive: true,
 			plugins: [
 				Regions.create({
@@ -159,15 +165,10 @@ function App() {
 
 		wavesurferRef.current.setVolume(volume);
 
-
-
 		wavesurferRef.current.on('ready', () => {
 			setLoading(false);
 			loadRegions();
 		});
-
-
-
 
 		wavesurferRef.current.on('finish', () => {
 			setIsPlaying(false);
@@ -226,7 +227,6 @@ function App() {
 
 		const handleRegionRemove = (region) => {
 			removeRegionFromMarkupTracks(region);
-			// setSelectedRegionId(null);
 		};
 
 		regionPlugin.on('region-updated', handleRegionUpdate);
@@ -241,6 +241,7 @@ function App() {
 
 	useEffect(() => {
 		const updateTrackLength = () => {
+			resetPlayerStatus()
 			loadRegions();
 		};
 		wavesurferRef.current.on('ready', updateTrackLength);
@@ -259,11 +260,15 @@ function App() {
 		}
 		setIsPlaying(!isPlaying);
 	};
+	const resetPlayerStatus = () => {
+		setIsPlaying(false);
+		wavesurferRef.current.seekTo(0);
+	}
 
 	const addMarkupRegion = (start, end) => {
 		if (wavesurferRef.current && wavesurferRef.current.plugins[0] && currentTrack) {
 			const color = getRandomBrightColor();
-			const id = crypto.randomUUID().slice(0, 8);
+			const id = generateUUID(8);
 
 			wavesurferRef.current.plugins[0].addRegion({
 				start: start,
@@ -379,6 +384,13 @@ function App() {
 	};
 
 
+	const handleShowImportModal = () => {
+		if (Object.keys(tracks).length === 0) {
+			alert("No tracks found. Please import a track first.");
+			return;
+		}
+		setShowImportModal(true)
+	}
 	const handleShowExportModal = () => {
 		if (Object.keys(tracks).length === 0) {
 			alert("No tracks found. Please import a track first.");
@@ -387,115 +399,11 @@ function App() {
 		setShowExportModal(true)
 	};
 	const handleCloseExportModal = () => setShowExportModal(false);
+	const handleCloseImportModal = () => setShowImportModal(false);
 
 
 	const handleShowHelpModal = () => setShowHelpModal(true);
 	const handleCloseHelpModal = () => setShowHelpModal(false);
-
-
-	const handleFormatChange = (format) => {
-		setExportFormat(format);
-		generatePreview(format);
-	};
-
-	const handleExportButton = (event) => {
-		event.preventDefault();
-
-		let exportList = Object.entries(markupTracks).map(([path, timings]) => {
-			const formattedTimings = timings.map(timing => [
-				parseFloat(timing.start.toFixed(2)),
-				parseFloat(timing.end.toFixed(2))
-			]);
-			return { path, timings: formattedTimings };
-		});
-
-		if (exportOnlyLabeledTracks) {
-			exportList = exportList.filter(({ timings }) => timings.length > 0);
-		}
-
-		if (exportFormat === "json") {
-			const jsonString = JSON.stringify(exportList, null, 2);
-			const blob = new Blob([jsonString], { type: "application/json" });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = "export_data.json";
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-		}
-
-		else if (exportFormat === "csv") {
-			const csvRows = [];
-
-			const maxTimings = Math.max(...exportList.map(item => item.timings.length));
-
-			const headers = ['path'];
-			for (let i = 0; i < maxTimings; i++) {
-				headers.push(`start_${i + 1}`, `end_${i + 1}`);
-			}
-			csvRows.push(headers.join(','));
-
-			exportList.forEach(({ path, timings }) => {
-				const row = [path];
-				for (let i = 0; i < maxTimings; i++) {
-					if (i < timings.length) {
-						row.push(timings[i][0], timings[i][1]);
-					} else {
-						row.push('', '');
-					}
-				}
-				csvRows.push(row.join(','));
-			});
-
-			const csvString = csvRows.join("\n");
-			const blob = new Blob([csvString], { type: "text/csv" });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = "export_data.csv";
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-		}
-	};
-
-
-	const generatePreview = (format) => {
-		if (format === 'json') {
-			const sampleData = [
-				{
-					name: `${exportFilePath}/1.mp3`,
-					regions: [
-						[0, 30.1],
-						[45.4, 80]
-					]
-				}
-			];
-			setExportPreviewData(JSON.stringify(sampleData, null, 2));
-		} else if (format === 'csv') {
-			const csvContent = `path,start,end\n${exportFilePath}/1.mp3,21.5,84.3`;
-			setExportPreviewData(csvContent);
-		}
-	};
-
-	const getStatistics = (markupTracks) => {
-		const totalFiles = Object.keys(markupTracks).length;
-		let nonEmptyFilesCount = 0;
-		let emptyFilesCount = 0;
-
-		Object.values(markupTracks).forEach((timings) => {
-			if (timings.length > 0) {
-				nonEmptyFilesCount++;
-			} else {
-				emptyFilesCount++;
-			}
-		});
-
-		return { totalFiles, nonEmptyFilesCount, emptyFilesCount };
-	};
 
 
 	const handleVolumeChange = (delta) => {
@@ -506,16 +414,16 @@ function App() {
 		});
 	};
 
-	const handleToggleSelectedTracks = () => {
-		setExportOnlyLabeledTracks(!exportOnlyLabeledTracks);
-	};
 
 	useEffect(() => {
-		generatePreview(exportFormat);
-	}, [exportFilePath, exportFormat, markupTracks]);
+		if (markupTracks) {
+			loadRegions()
+		}
+	}, [markupTracks]);
 
-	const { totalFiles, nonEmptyFilesCount, emptyFilesCount } = getStatistics(markupTracks);
-
+	useEffect(() => {
+		setInMainFrame(showExportModal === false && showImportModal === false && showHelpModal === false)
+	}, [showExportModal, showImportModal, showHelpModal])
 
 
 	return (
@@ -601,35 +509,62 @@ function App() {
 				<Col md={9} className="p-3" style={{ height: '100%' }}>
 					<h4>Audio: {currentTrack}</h4>
 					<div ref={waveContainerRef} id="waveform" style={{ border: '1px solid #dee2e6', height: '128px' }}></div>
-					{currentTrack && (
-						<div className="mt-3">
-							<Button
-								variant={isPlaying ? 'danger' : 'success'}
-								onClick={handlePlayPauseToggle}
-							>
-								{isPlaying ? <FaPause /> : <FaPlay />}
-								{isPlaying ? ' Pause' : ' Play'}
+					<div className="mt-3 d-flex flex-column gap-3">
+						{/* Import/Export Buttons */}
+						<div className="d-flex justify-content-end align-items-center gap-2">
+							<Button variant="primary" onClick={() => handleShowImportModal()}>
+								Import
 							</Button>
-
-							<Button
-								variant="secondary"
-								className="ms-2"
-								onClick={() => addMarkupRegion(0, 5)}
-							>
-								<FaPlus /> Add a label
-							</Button>
-							<Button variant="primary" onClick={() => handleShowExportModal()} className="ms-2">
-								Export
-							</Button>
-
-							<Button variant="secondary" onClick={goToPreviousTrack} disabled={currentTrackIndex <= 0} className="ms-2">
-								Previous {currentTrackIndex > 0 && `(${Object.keys(tracks)[currentTrackIndex - 1]})`}
-							</Button>
-							<Button variant="secondary" onClick={goToNextTrack} disabled={currentTrackIndex === null || currentTrackIndex >= Object.keys(tracks).length - 1} className="ms-2">
-								Next {currentTrackIndex < Object.keys(tracks).length - 1 && `(${Object.keys(tracks)[currentTrackIndex + 1]})`}
-							</Button>
+							{currentTrack && (
+								<Button
+									variant="primary"
+									onClick={() => handleShowExportModal()}
+								>
+									Export
+								</Button>
+							)}
 						</div>
-					)}
+
+						{/* Controls for current track */}
+						{currentTrack && (
+							<div className="d-flex flex-wrap gap-2 align-items-center">
+								<Button
+									variant={isPlaying ? 'danger' : 'success'}
+									onClick={handlePlayPauseToggle}
+								>
+									{isPlaying ? <FaPause /> : <FaPlay />}
+									{isPlaying ? ' Pause' : ' Play'}
+								</Button>
+
+								<Button
+									variant="secondary"
+									onClick={() => addMarkupRegion(0, 5)}
+								>
+									<FaPlus /> Add a label
+								</Button>
+
+								<Button
+									variant="secondary"
+									onClick={goToPreviousTrack}
+									disabled={currentTrackIndex <= 0}
+								>
+									Previous {currentTrackIndex > 0 && `(${Object.keys(tracks)[currentTrackIndex - 1]})`}
+								</Button>
+								<Button
+									variant="secondary"
+									onClick={goToNextTrack}
+									disabled={
+										currentTrackIndex === null ||
+										currentTrackIndex >= Object.keys(tracks).length - 1
+									}
+								>
+									Next {currentTrackIndex < Object.keys(tracks).length - 1 && `(${Object.keys(tracks)[currentTrackIndex + 1]})`}
+								</Button>
+							</div>
+						)}
+					</div>
+
+
 
 					{currentTrack && markupTracks[currentTrack] && markupTracks[currentTrack].length > 0 && (
 						<div className="mt-3">
@@ -666,8 +601,21 @@ function App() {
 				</Col>
 			</Row>
 
+			<ImportModal
+				showImportModal={showImportModal}
+				handleCloseImportModal={handleCloseImportModal}
+				setMarkupTracks={setMarkupTracks}
+				loadRegions={loadRegions} />
+
+			<ExportModal
+				showExportModal={showExportModal}
+				// handleExportButton={handleExportButton}
+				handleCloseExportModal={handleCloseExportModal}
+				markupTracks={markupTracks}
+			/>
+
 			{/* Export modal */}
-			<CustomModal show={showExportModal} handleClose={handleCloseExportModal} title="Export dataset">
+			{/* <CustomModal show={showExportModal} handleClose={handleCloseExportModal} title="Export dataset">
 				<div>
 					<Form onSubmit={handleExportButton}>
 						<Form.Group controlId="exportFormat">
@@ -723,7 +671,7 @@ function App() {
 						</Button>
 					</Form>
 				</div>
-			</CustomModal>
+			</CustomModal> */}
 
 			{/* Help modal */}
 			<CustomModal show={showHelpModal} handleClose={handleCloseHelpModal} title="Help">
@@ -753,6 +701,14 @@ function App() {
 						<tr>
 							<td><kbd>N</kbd></td>
 							<td>Add a new region</td>
+						</tr>
+						<tr>
+							<td><kbd>I</kbd></td>
+							<td>Import dataset</td>
+						</tr>
+						<tr>
+							<td><kbd>E</kbd></td>
+							<td>Export dataset</td>
 						</tr>
 						<tr>
 							<td><kbd>D</kbd> / <kbd>Delete</kbd></td>
