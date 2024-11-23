@@ -270,14 +270,15 @@ function App() {
 			const color = getRandomBrightColor();
 			const id = generateUUID(8);
 
-			wavesurferRef.current.plugins[0].addRegion({
-				start: start,
-				end: end,
-				color: color,
-				drag: true,
-				resize: true,
-				id: id
-			});
+			// FIXME: Adding a ghost region
+			// wavesurferRef.current.plugins[0].addRegion({
+			// 	start: start,
+			// 	end: end,
+			// 	color: color,
+			// 	drag: true,
+			// 	resize: true,
+			// 	id: id
+			// });
 			setSelectedRegionId(id);
 			setMarkupTracks(prev => ({
 				...prev,

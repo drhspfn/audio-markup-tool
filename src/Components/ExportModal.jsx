@@ -16,15 +16,30 @@ function ExportModal({
 
     const generatePreview = (format) => {
         if (format === 'json') {
-            const sampleData = [
-                {
-                    name: `${exportFilePath}/1.mp3`,
-                    regions: [
-                        [0, 30.1],
-                        [45.4, 80]
-                    ]
-                }
-            ];
+            const sampleData = {
+                'settings': {
+                    'path': exportFilePath,
+                    'max-timings': 0
+                },
+                'data': [
+                    {
+                        name: `${exportFilePath}/1.mp3`,
+                        regions: [
+                            [0, 30.1],
+                            [45.4, 80]
+                        ]
+                    }
+                ]
+            }
+            // const sampleData = [
+            //     {
+            //         name: `${exportFilePath}/1.mp3`,
+            //         regions: [
+            //             [0, 30.1],
+            //             [45.4, 80]
+            //         ]
+            //     }
+            // ];
             setExportPreviewData(JSON.stringify(sampleData, null, 2));
         } else if (format === 'csv') {
             const csvContent = `path,start,end\n${exportFilePath}/1.mp3,21.5,84.3`;
@@ -44,9 +59,7 @@ function ExportModal({
         setExportOnlyLabeledTracks(!exportOnlyLabeledTracks);
     };
 
-    useEffect(() => {
-        generatePreview(exportFormat);
-    }, [exportFilePath, exportFormat]);
+    
 
     const getStatistics = (markupTracks) => {
         const totalFiles = Object.keys(markupTracks).length;
@@ -65,78 +78,82 @@ function ExportModal({
     };
 
     const handleExportButton = (event) => {
-		event.preventDefault();
-		const finallyResult = {
-			'settings': {
-				'path': exportFilePath,
-				'max-timings': 0
-			},
-			'data': []
-		}
+        event.preventDefault();
+        const finallyResult = {
+            'settings': {
+                'path': exportFilePath,
+                'max-timings': 0
+            },
+            'data': []
+        }
 
-		let exportList = Object.entries(markupTracks).map(([path, timings]) => {
-			const formattedTimings = timings.map(timing => [
-				parseFloat(timing.start.toFixed(2)),
-				parseFloat(timing.end.toFixed(2))
-			]);
-			return { path: joinPath(exportFilePath, path), timings: formattedTimings };
-		});
+        let exportList = Object.entries(markupTracks).map(([path, timings]) => {
+            const formattedTimings = timings.map(timing => [
+                parseFloat(timing.start.toFixed(2)),
+                parseFloat(timing.end.toFixed(2))
+            ]);
+            return { path: joinPath(exportFilePath, path), timings: formattedTimings };
+        });
 
-		if (exportOnlyLabeledTracks) {
-			exportList = exportList.filter(({ timings }) => timings.length > 0);
-		}
+        if (exportOnlyLabeledTracks) {
+            exportList = exportList.filter(({ timings }) => timings.length > 0);
+        }
 
-		const maxTimings = Math.max(...exportList.map(item => item.timings.length));
+        const maxTimings = Math.max(...exportList.map(item => item.timings.length));
 
-		if (exportFormat === "json") {
-			finallyResult.data = exportList;
-			finallyResult.settings['max-timings'] = maxTimings;
-			const jsonString = JSON.stringify(finallyResult, null, 2);
-			const blob = new Blob([jsonString], { type: "application/json" });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = "export_data.json";
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-		}
+        if (exportFormat === "json") {
+            finallyResult.data = exportList;
+            finallyResult.settings['max-timings'] = maxTimings;
+            const jsonString = JSON.stringify(finallyResult, null, 2);
+            const blob = new Blob([jsonString], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "export_data.json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
 
-		else if (exportFormat === "csv") {
-			const csvRows = [];
-			const headers = ['path'];
-			for (let i = 0; i < maxTimings; i++) {
-				headers.push(`start_${i + 1}`, `end_${i + 1}`);
-			}
-			csvRows.push(headers.join(','));
+        else if (exportFormat === "csv") {
+            const csvRows = [];
+            const headers = ['path'];
+            for (let i = 0; i < maxTimings; i++) {
+                headers.push(`start_${i + 1}`, `end_${i + 1}`);
+            }
+            csvRows.push(headers.join(','));
 
-			exportList.forEach(({ path, timings }) => {
-				const row = [path];
-				for (let i = 0; i < maxTimings; i++) {
-					if (i < timings.length) {
-						row.push(timings[i][0], timings[i][1]);
-					} else {
-						row.push('', '');
-					}
-				}
-				csvRows.push(row.join(','));
-			});
+            exportList.forEach(({ path, timings }) => {
+                const row = [path];
+                for (let i = 0; i < maxTimings; i++) {
+                    if (i < timings.length) {
+                        row.push(timings[i][0], timings[i][1]);
+                    } else {
+                        row.push('', '');
+                    }
+                }
+                csvRows.push(row.join(','));
+            });
 
-			const csvString = csvRows.join("\n");
-			const blob = new Blob([csvString], { type: "text/csv" });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = "export_data.csv";
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-		}
-	};
+            const csvString = csvRows.join("\n");
+            const blob = new Blob([csvString], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "export_data.csv";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    };
 
     const { totalFiles, nonEmptyFilesCount, emptyFilesCount } = getStatistics(markupTracks);
+
+    useEffect(() => {
+        generatePreview(exportFormat);
+    }, [exportFilePath, exportFormat]);
 
     return (
         <CustomModal show={showExportModal} handleClose={handleCloseExportModal} title="Export dataset">
